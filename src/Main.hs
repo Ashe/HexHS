@@ -34,10 +34,10 @@ gameLoop !gs = do
   newGS <- takePlayerTurn gs
   if checkWin newGS (turn gs)
     then do
+      drawBoard (board gs)
       setSGR [SetColor Foreground Vivid (getColour (turn gs))]
       putStr $ show (turn gs)
       setSGR [SetColor Foreground Vivid Yellow]
-      drawBoard (board gs)
       putStrLn " has won the game!"
     else gameLoop newGS
 
@@ -78,10 +78,11 @@ takePlayerTurn gs = do
 
 -- Take input of the current player and coords
 processInput :: GameState -> IO (Int, Int)
-processInput gs@(GameState board turn) = do
-  let col = case turn of P1 -> Blue; P2 -> Red;
+processInput gs = do
+  setSGR [SetColor Foreground Vivid (getColour (turn gs))]
+  putStr $ show (turn gs)
   setSGR [SetColor Foreground Vivid White]
-  putStr $ show turn ++ " - Please make your move eg. A0: "
+  putStr " - Please make your move eg. A0: "
   input <- getLine
   hFlush stdout
   case convertStrToCoords input of
