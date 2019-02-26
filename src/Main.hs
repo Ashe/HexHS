@@ -218,7 +218,7 @@ createNodeTree depth b@(Board board) =
   , lastPlay = Nothing
   , depth = 0
   , children = leaves
-  , value = 0--value . (decideMinMax P1) $ leaves
+  , value = value . (decideMinMax P1) $ leaves
   }
   where leaves = map (constructNode depth 0 P1 b) choices
         (w, h) = boardSize
@@ -229,21 +229,21 @@ createNodeTree depth b@(Board board) =
 constructNode :: Int -> Int -> Player -> Board -> (Int, Int) -> MinMaxNode
 constructNode depth pastDepth p (Board board) (x, y) =
   MinMaxNode
-  { current = newBoard
+  { current = Board newBoard
   , player = nextTurn
   , lastPlay = Just (x, y)
   , depth = newDepth
   , children = leaves
-  , value = 0--value . (decideMinMax nextTurn) $ leaves
+  , value = calcValue
   }
   where i = y * (fst boardSize) + x
         newDepth = pastDepth + 1
-        newBoard = Board $ adjust (const (Stone p)) i board
+        newBoard = adjust (const (Stone p)) i board
         nextTurn = if p == P1 then P2 else P1
         (w, h) = boardSize
-        grid = zip [(x, y) | y <- [0..h - 1], x <- [0..w - 1]] (toList board)
+        grid = zip [(x, y) | y <- [0..h - 1], x <- [0..w - 1]] (toList newBoard)
         choices = map fst $ filter (((==) Empty) . snd) grid
-        leaves = map (constructNode depth pastDepth nextTurn newBoard) choices
+        leaves = map (constructNode depth pastDepth nextTurn (Board newBoard)) choices
         valMult = if p == P1 then 1 else -1
         calcValue
           | length leaves > 0 = (depth + 1 - newDepth) * valMult
