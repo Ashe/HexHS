@@ -3,6 +3,7 @@ module Types
 , Player (..)
 , Tile (..)
 , Board (..)
+, boardSize
 ) where
 
 -- List that allows for better insertion
@@ -14,6 +15,10 @@ data GameState =
   { board :: Board
   , turn :: Player
   }
+
+-- Size of the game
+boardSize :: (Int, Int)
+boardSize = (11, 11)
 
 -- 2 Players in the game
 data Player = P1 | P2
@@ -29,7 +34,7 @@ data Tile = Empty | Stone Player
 
 -- How a stone is drawn on the board
 instance Show Tile where
-  show Empty = "."
+  show Empty = "o"
   show (Stone P1) = "1"
   show (Stone P2) = "2"
 
