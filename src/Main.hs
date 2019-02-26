@@ -244,10 +244,11 @@ constructNode depth pastDepth p (Board board) (x, y) =
         grid = zip [(x, y) | y <- [0..h - 1], x <- [0..w - 1]] (toList newBoard)
         choices = map fst $ filter (((==) Empty) . snd) grid
         leaves = map (constructNode depth pastDepth nextTurn (Board newBoard)) choices
-        valMult = if p == P1 then 1 else -1
+        valMult = if p == P1 then -1 else 1
         calcValue
-          | length leaves > 0 = (depth + 1 - newDepth) * valMult
-          | otherwise = value . (decideMinMax nextTurn) $ leaves
+          -- @TODO: IF THIS IS A WIN, THEN AWARD POINTS
+          | length leaves > 0 = value . (decideMinMax nextTurn) $ leaves
+          | otherwise = (depth + 1 - newDepth) * valMult
 
 -- Sync up this node tree properly
 catchUpNodeTree :: Board -> MinMaxNode -> Maybe MinMaxNode
@@ -273,7 +274,7 @@ evaluateChoices mvar gs = do
         -- Report findings
         Just (x, y) -> do
           putMVar mvar nextTree
-
+          print "HELLO"
           setSGR [SetColor Foreground Vivid (getColour (turn gs))]
           putStr $ show (turn gs)
           setSGR [SetColor Foreground Vivid White]

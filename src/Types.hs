@@ -25,7 +25,7 @@ import System.Console.ANSI
 
 -- Size of the game (max 10, 10)
 boardSize :: (Int, Int)
-boardSize = (10, 10)
+boardSize = (3, 3)
 
 -- Colours of players
 getColour P1 = Cyan
@@ -66,8 +66,6 @@ data Tile = Empty | Stone Player
 
 -- How a stone is drawn on the board
 instance Show Tile where
-  show (Stone P1) = "1"
-  show (Stone P2) = "2"
   show _ = "o"
 
 -- A Board is made up of tiles
@@ -88,7 +86,10 @@ data MinMaxNode =
   , value     :: Int
   , depth     :: Int
   }
-  deriving (Show)
+
+-- Display the tree's values only
+instance Show MinMaxNode where
+  show a = "Node: { Value: " ++ show (value a) ++ ", Children: " ++ show (children a) ++ "}"
 
 -- Make sure we can compare nodes
 instance Eq MinMaxNode where
