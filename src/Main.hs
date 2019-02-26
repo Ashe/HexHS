@@ -32,7 +32,10 @@ main = do
 -- Create a new game state
 newGame :: IO GameState
 newGame = do
-  ai <- newMVar $ createNodeTree (-1) newBoard
+  let (w, h) = boardSize
+      tree = createNodeTree (w * h + 1) newBoard
+  putStrLn $ "Generated tree with " ++ show (length $ children $ tree) ++ " children."
+  ai <- newMVar tree
   pure $ GameState newBoard P1 Manual (AI ai)
   where newBoard = Board $ replicate size Empty
         size = let (w, h) = boardSize in w * h
@@ -215,7 +218,7 @@ createNodeTree depth b@(Board board) =
   , lastPlay = Nothing
   , depth = 0
   , children = leaves
-  , value = value . (decideMinMax P1) $ leaves
+  , value = 0--value . (decideMinMax P1) $ leaves
   }
   where leaves = map (constructNode depth 0 P1 b) choices
         (w, h) = boardSize
@@ -231,7 +234,7 @@ constructNode depth pastDepth p (Board board) (x, y) =
   , lastPlay = Just (x, y)
   , depth = newDepth
   , children = leaves
-  , value = value . (decideMinMax nextTurn) $ leaves
+  , value = 0--value . (decideMinMax nextTurn) $ leaves
   }
   where i = y * (fst boardSize) + x
         newDepth = pastDepth + 1
@@ -243,7 +246,7 @@ constructNode depth pastDepth p (Board board) (x, y) =
         leaves = map (constructNode depth pastDepth nextTurn newBoard) choices
         valMult = if p == P1 then 1 else -1
         calcValue
-          | length leaves > 0 = ((w * h + 1) - newDepth) * valMult
+          | length leaves > 0 = (depth + 1 - newDepth) * valMult
           | otherwise = value . (decideMinMax nextTurn) $ leaves
 
 -- Sync up this node tree properly
