@@ -1,6 +1,7 @@
 module Types
 ( GameState (..)
 , Player (..)
+, ControlType (..)
 , Tile (..)
 , Board (..)
 , boardSize
@@ -13,12 +14,9 @@ import Data.Sequence hiding (Empty)
 -- For colours
 import System.Console.ANSI
 
--- A GameState which can be represented
-data GameState = 
-  GameState
-  { board :: Board
-  , turn :: Player
-  }
+--------------------
+-- GAME CONSTANTS --
+--------------------
 
 -- Size of the game (max 10, 10)
 boardSize :: (Int, Int)
@@ -28,6 +26,19 @@ boardSize = (10, 10)
 getColour P1 = Cyan
 getColour P2 = Red
 
+----------------
+-- GAME TYPES --
+----------------
+
+-- A GameState which can be represented
+data GameState = 
+  GameState
+  { board :: Board
+  , turn :: Player
+  , p1Controls :: ControlType
+  , p2Controls :: ControlType
+  }
+
 -- 2 Players in the game
 data Player = P1 | P2
   deriving (Eq)
@@ -35,6 +46,9 @@ data Player = P1 | P2
 instance Show Player where
   show P1 = "Player 1"
   show P2 = "Player 2"
+
+-- Ways of controlling the game
+data ControlType = Manual | Random
 
 -- A Tile is just a representation of a player's moves
 data Tile = Empty | Stone Player

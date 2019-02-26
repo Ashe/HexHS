@@ -33,3 +33,4 @@ executables:
     dependencies:
     - containers
     - ansi-terminal
+    - random
