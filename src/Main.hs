@@ -7,6 +7,7 @@ import Data.Sequence (replicate)
 import Data.Char (toUpper, ord)
 import Text.Read (readMaybe)
 import Data.Maybe (isNothing, fromJust)
+import System.IO
 
 -- Import our types
 import Types
@@ -28,28 +29,32 @@ newGame = GameState newBoard P1
 -- Game loop of game
 gameLoop :: GameState -> IO ()
 gameLoop !gs@(GameState board turn) = do
-  putStrLn $ show turn ++ " - please input where you'd like to place a stone eg. A0:"
-  action <- processInput
-  print action
+  coords <- processInput turn
+  print coords
   gameLoop gs
 
 -- Take input of the current player and coords or error
-processInput :: IO (Either (Int, Int) String)
-processInput = do
+processInput :: Player -> IO (Int, Int)
+processInput turn = do
+  putStr $ show turn ++ " - Please make your move eg. A0: "
   input <- getLine
-  pure $ convertStrToCoords input
+  hFlush stdout
+  case convertStrToCoords input of
+    Left coords -> pure coords
+    Right msg -> do
+      putStrLn msg
+      processInput turn
 
 -- Converts A0 into 00
 convertStrToCoords :: String -> Either (Int, Int) String
-convertStrToCoords (x : y : _) = result
+convertStrToCoords (x : y : _) 
+  | x' < 0 || x' >= snd boardSize = 
+      Right $ "Error: Col " ++ [toUpper x] ++ " is invalid."
+  | isNothing y' = 
+      Right $ "Error: Row " ++ [y] ++ " is invalid."
+  | fromJust y' < 0 || fromJust y' >= fst boardSize = 
+      Right $ "Error: Row " ++ show y' ++ "is out of bounds."
+  | otherwise = Left (x', fromJust y')
   where x' = ord (toUpper x) - ord 'A'
         y' = readMaybe [y]
-        result 
-          | x' < 0 || x' >= snd boardSize = 
-              Right $ "Error: Col " ++ [toUpper x] ++ " is invalid."
-          | isNothing y' = 
-              Right $ "Error: Row " ++ [y] ++ " is invalid."
-          | fromJust y' < 0 || fromJust y' >= fst boardSize = 
-              Right $ "Error: Row " ++ show y' ++ "is out of bounds."
-          | otherwise = Left (x', fromJust y')
-convertStrToCoords input = Right $ "Invalid input: " ++ input ++ "."
+convertStrToCoords input = Right $ "Error: Invalid input \"" ++ input ++ "\"."
