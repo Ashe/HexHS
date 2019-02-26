@@ -4,10 +4,14 @@ module Types
 , Tile (..)
 , Board (..)
 , boardSize
+, getColour
 ) where
 
 -- List that allows for better insertion
 import Data.Sequence hiding (Empty)
+
+-- For colours
+import System.Console.ANSI
 
 -- A GameState which can be represented
 data GameState = 
@@ -18,7 +22,11 @@ data GameState =
 
 -- Size of the game
 boardSize :: (Int, Int)
-boardSize = (11, 11)
+boardSize = (10, 10)
+
+-- Colours of players
+getColour P1 = Cyan
+getColour P2 = Red
 
 -- 2 Players in the game
 data Player = P1 | P2
@@ -34,9 +42,7 @@ data Tile = Empty | Stone Player
 
 -- How a stone is drawn on the board
 instance Show Tile where
-  show Empty = "o"
-  show (Stone P1) = "1"
-  show (Stone P2) = "2"
+  show _ = "o"
 
 -- A Board is made up of tiles
 newtype Board = Board (Seq Tile)

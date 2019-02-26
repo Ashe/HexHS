@@ -8,6 +8,7 @@ import Data.Char (toUpper, ord, chr)
 import Text.Read (readMaybe)
 import Data.Maybe (isNothing, fromJust)
 import Control.Monad (forM_)
+import System.Console.ANSI
 import System.IO
 
 -- Import our types
@@ -30,17 +31,30 @@ gameLoop !gs = do
   newGS <- takePlayerTurn gs
   gameLoop newGS
 
-
+-- Draw the state of the board on screen
 drawBoard :: Board -> IO ()
-drawBoard (Board ls) = br >> forM_ [0..fst boardSize - 1] drawRow >> br
+drawBoard (Board ls) = br >> forM_ [0..h + 1] drawRow >> br
   where br = putStrLn ""
+        (w, h) = boardSize
         offset r = putStr $ take r $ repeat ' '
-        drawRow r = offset r >> (forM_ [0..snd boardSize - 1] (drawEl r)) >> br
-        drawEl 0 0 = putStr $ "  "
-        drawEl 0 x = putStr [' ', chr (x - 1 + (ord 'A'))]
-        drawEl y 0 = putStr $ " " ++ show (y - 1)
-        drawEl y x = putStr $ " " ++ show (getEl (x - 1) (y - 1))
+        drawRow r = offset r >> (forM_ [0..w + 1] (drawEl r)) >> br
+        drawEl y x
+          | (y <= 0 && x <= 0) || (x > w && y > h) = putStr "  "
+          | (y > h && x <= 0) || (x > w && y <= 0) = putStr "  "
+          | (y == 0 || y > h) && x > 0 = 
+            p2Col >> putStr [' ', chr (x - 1 + (ord 'A'))]
+          | (x == 0 || x > w) && y > 0 = 
+            p1Col >> putStr (" " ++ show (y - 1))
+          | otherwise = do
+              let el = getEl (x - 1) (y - 1)
+                  col = case el of
+                          Empty -> White
+                          Stone pl -> getColour pl
+              setSGR [SetColor Foreground Vivid col]
+              putStr $ " " ++ show el
         getEl x y = index ls (fst boardSize * y + x)
+        p1Col = setSGR [SetColor Foreground Vivid (getColour P1)]
+        p2Col = setSGR [SetColor Foreground Vivid (getColour P2)]
 
 -- How a player will make moves
 takePlayerTurn :: GameState -> IO GameState
@@ -55,6 +69,8 @@ takePlayerTurn gs = do
 -- Take input of the current player and coords
 processInput :: GameState -> IO (Int, Int)
 processInput gs@(GameState board turn) = do
+  let col = case turn of P1 -> Blue; P2 -> Red;
+  setSGR [SetColor Foreground Vivid White]
   putStr $ show turn ++ " - Please make your move eg. A0: "
   input <- getLine
   hFlush stdout

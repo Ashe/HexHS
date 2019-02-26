@@ -32,3 +32,4 @@ executables:
     - -with-rtsopts=-N
     dependencies:
     - containers
+    - ansi-terminal
