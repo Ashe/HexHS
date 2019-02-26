@@ -25,7 +25,7 @@ import System.Console.ANSI
 
 -- Size of the game (max 10, 10)
 boardSize :: (Int, Int)
-boardSize = (5, 5)
+boardSize = (3,3)
 
 -- Colours of players
 getColour P1 = Cyan
@@ -41,7 +41,7 @@ decideMinMax P2 = maximum
 ----------------
 
 -- A GameState which can be represented
-data GameState = 
+data GameState =
   GameState
   { board       :: Board
   , turn        :: Player
@@ -89,7 +89,7 @@ data MinMaxNode =
 
 -- Display the tree's values only
 instance Show MinMaxNode where
-  show a = "Node: { Value: " ++ show (value a) ++ ", Children: " ++ show (children a) ++ "}"
+  show a = "Node: { Player: " ++ show (player a) ++ ", Last Play: " ++ show (lastPlay a) ++ ", Value: " ++ show (value a) ++ ", Children: " ++ show (Prelude.length (children a)) ++ "}"
 
 -- Make sure we can compare nodes
 instance Eq MinMaxNode where

@@ -8,7 +8,7 @@ import Data.Sequence (replicate, adjust, index)
 import Data.Foldable (toList)
 import Data.Char (toUpper, ord, chr)
 import Text.Read (readMaybe)
-import Data.Maybe (isNothing, fromJust)
+import Data.Maybe (isJust, isNothing, fromJust)
 import Control.Monad (forM_)
 import Control.Concurrent.MVar
 import System.Random (randomRIO)
@@ -68,7 +68,8 @@ setupGame = do
             'A' -> pure Manual
             'B' -> pure Random
             'C' -> do
-              let tree = createNodeTree 2 board
+              let complexity = fst boardSize * snd boardSize
+                  tree = constructNode complexity (-1) P1 board Nothing
               ai <- newMVar tree
               pure $ AI ai
             _ -> do
@@ -259,46 +260,39 @@ randomChoice gs = do
 -- MINMAX AI LOGIC --
 ---------------------
 
--- Create a tree of possible minmax
-createNodeTree :: Int -> Board -> MinMaxNode
-createNodeTree depth b@(Board board) =
-  MinMaxNode
-  { current = b
-  , player = P1
-  , lastPlay = Nothing
-  , depth = 0
-  , children = leaves
-  , value = value . (decideMinMax P1) $ leaves
-  }
-  where leaves = map (constructNode depth 0 P1 b) choices
-        (w, h) = boardSize
-        grid = zip [(x, y) | y <- [0..h - 1], x <- [0..w - 1]] (toList board)
-        choices = map fst $ filter (((==) Empty) . snd) grid
-
 -- Recursively create nodes and their children
-constructNode :: Int -> Int -> Player -> Board -> (Int, Int) -> MinMaxNode
-constructNode depth pastDepth p (Board board) (x, y) =
+-- This is very bloated:
+  -- current: Current state of the board
+  -- player: Who's going to make their turn next
+  -- lastPlay: What was the last played move by the previous person
+-- The previous move impacts the current board, marked with the opposing player
+constructNode :: Int -> Int -> Player -> Board -> Maybe (Int, Int) -> MinMaxNode
+constructNode depth pastDepth p (Board board) maybeCoords =
   MinMaxNode
   { current = Board newBoard
-  , player = nextTurn
-  , lastPlay = Just (x, y)
+  , player = p
+  , lastPlay = maybeCoords
   , depth = newDepth
   , children = leaves
   , value = calcValue
   }
-  where i = y * (fst boardSize) + x
+  where i = let Just (x, y) = maybeCoords in y * (fst boardSize) + x
         newDepth = pastDepth + 1
-        newBoard = adjust (const (Stone p)) i board
+        newBoard
+          | isJust maybeCoords = adjust (const (Stone nextTurn)) i board
+          | otherwise = board
         nextTurn = if p == P1 then P2 else P1
         (w, h) = boardSize
         grid = zip [(x, y) | y <- [0..h - 1], x <- [0..w - 1]] (toList newBoard)
         choices = map fst $ filter (((==) Empty) . snd) grid
-        leaves = map (constructNode depth pastDepth nextTurn (Board newBoard)) choices
+        leaves
+          | newDepth >= depth = []
+          | otherwise = map (constructNode depth pastDepth nextTurn (Board newBoard)) (map Just choices)
         valMult = if p == P1 then -1 else 1
         calcValue
           | checkWin (Board newBoard) p = resolveValue
-          | newDepth == depth = resolveValue
-          | length leaves > 0 = value . (decideMinMax nextTurn) $ leaves
+          | newDepth >= depth = resolveValue
+          | length leaves > 0 = value . (decideMinMax p) $ leaves
           | otherwise = resolveValue
         resolveValue = (depth + 1 - newDepth) * valMult
 
@@ -306,6 +300,8 @@ constructNode depth pastDepth p (Board board) (x, y) =
 catchUpNodeTree :: Board -> MinMaxNode -> Maybe MinMaxNode
 catchUpNodeTree board tree
   | current tree == board = Just tree
+  | length (children tree) == 0 = Just $
+      constructNode (depth tree) (-1) (player tree) (current tree) (lastPlay tree)
   | otherwise = find (\n -> current n == board) (children tree)
 
 -- Evaluate choices and choose a random one
@@ -313,15 +309,23 @@ evaluateChoices :: MVar MinMaxNode -> GameState -> IO (Either (Int, Int) String)
 evaluateChoices mvar gs = do
 
   -- Evaluate node tree
+  nodeTree <- takeMVar mvar
+  let maybeTree = catchUpNodeTree (board gs) nodeTree
+
+  -- Print setup
   setSGR [SetColor Foreground Vivid (getColour (turn gs))]
   putStr $ show (turn gs)
   setSGR [SetColor Foreground Vivid White]
-  putStrLn " - Thinking.."
-  nodeTree <- takeMVar mvar
-  let maybeTree = catchUpNodeTree (board gs) nodeTree
+  putStrLn " - Thinking.." >> print nodeTree
+  setSGR [SetColor Foreground Vivid Magenta]
+  forM_ (children nodeTree) (\c -> putStrLn $ "Child" ++ show c)
+
+  -- Try to sync up
   case maybeTree of
 
     -- Synced up correctly, resume evaluation
+    -- If this new tree has no more children, generate more of the tree
+    -- The values of this tree are recalculated, so messing with the depth doesn't matter
     Just tree -> do
       let nextTree = decideMinMax (player tree) (children tree)
           maybeCoords = lastPlay nextTree
