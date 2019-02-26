@@ -47,7 +47,7 @@ gameLoop !gs = do
   maybeNewGS <- takeTurn gs
   case maybeNewGS of
     Just newGS -> do
-      if checkWin newGS (turn gs)
+      if checkWin (board newGS) (turn gs)
         then do
           drawBoard (board newGS)
           setSGR [SetColor Foreground Vivid (getColour (turn gs))]
@@ -127,9 +127,9 @@ tryMakeMove gs (x, y) =
             }
 
 -- Check if the previous player won
-checkWin :: GameState -> Player -> Bool
-checkWin gs prevPlayer = foldl (||) False $ map check startSearch
-  where board' = let (Board b) = board gs in toList b
+checkWin :: Board -> Player -> Bool
+checkWin (Board b) prevPlayer = foldl (||) False $ map check startSearch
+  where board' = toList b
         (w, h) = boardSize
         grid = zip [(x, y) | y <- [0..h - 1], x <- [0..w - 1]] board'
         check = checkWinChain grid prevPlayer []
@@ -246,9 +246,10 @@ constructNode depth pastDepth p (Board board) (x, y) =
         leaves = map (constructNode depth pastDepth nextTurn (Board newBoard)) choices
         valMult = if p == P1 then -1 else 1
         calcValue
-          -- @TODO: IF THIS IS A WIN, THEN AWARD POINTS
+          | checkWin (Board newBoard) p = resolveValue
           | length leaves > 0 = value . (decideMinMax nextTurn) $ leaves
-          | otherwise = (depth + 1 - newDepth) * valMult
+          | otherwise = resolveValue
+        resolveValue = (depth + 1 - newDepth) * valMult
 
 -- Sync up this node tree properly
 catchUpNodeTree :: Board -> MinMaxNode -> Maybe MinMaxNode
@@ -261,6 +262,10 @@ evaluateChoices :: MVar MinMaxNode -> GameState -> IO (Either (Int, Int) String)
 evaluateChoices mvar gs = do
 
   -- Evaluate node tree
+  setSGR [SetColor Foreground Vivid (getColour (turn gs))]
+  putStr $ show (turn gs)
+  setSGR [SetColor Foreground Vivid White]
+  putStrLn " - Thinking.."
   nodeTree <- takeMVar mvar
   let maybeTree = catchUpNodeTree (board gs) nodeTree
   case maybeTree of
@@ -274,7 +279,6 @@ evaluateChoices mvar gs = do
         -- Report findings
         Just (x, y) -> do
           putMVar mvar nextTree
-          print "HELLO"
           setSGR [SetColor Foreground Vivid (getColour (turn gs))]
           putStr $ show (turn gs)
           setSGR [SetColor Foreground Vivid White]

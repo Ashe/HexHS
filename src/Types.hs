@@ -25,7 +25,7 @@ import System.Console.ANSI
 
 -- Size of the game (max 10, 10)
 boardSize :: (Int, Int)
-boardSize = (3, 3)
+boardSize = (5, 5)
 
 -- Colours of players
 getColour P1 = Cyan
