@@ -287,7 +287,7 @@ constructNode depth pastDepth p (Board board) maybeCoords =
         choices = map fst $ filter (((==) Empty) . snd) grid
         leaves
           | newDepth >= depth = []
-          | otherwise = map (constructNode depth pastDepth nextTurn (Board newBoard)) (map Just choices)
+          | otherwise = map (constructNode depth newDepth nextTurn (Board newBoard)) (map Just choices)
         valMult = if p == P1 then -1 else 1
         calcValue
           | checkWin (Board newBoard) p = resolveValue
