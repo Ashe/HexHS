@@ -3,12 +3,14 @@
 module Main where
 
 import Prelude hiding (replicate)
+import Data.List (find)
 import Data.Sequence (replicate, adjust, index)
 import Data.Foldable (toList)
 import Data.Char (toUpper, ord, chr)
 import Text.Read (readMaybe)
 import Data.Maybe (isNothing, fromJust)
 import Control.Monad (forM_)
+import Control.Concurrent.MVar
 import System.Random (randomRIO)
 import System.Console.ANSI
 import System.IO
@@ -23,12 +25,15 @@ import Types
 -- Entry to our program
 main :: IO ()
 main = do
-  gameLoop newGame
+  ng <- newGame
+  gameLoop ng
   setSGR [SetColor Foreground Vivid White]
 
 -- Create a new game state
-newGame :: GameState
-newGame = GameState newBoard P1 Manual Random
+newGame :: IO GameState
+newGame = do
+  ai <- newMVar $ createNodeTree (-1) newBoard
+  pure $ GameState newBoard P1 Manual (AI ai)
   where newBoard = Board $ replicate size Empty
         size = let (w, h) = boardSize in w * h
 
@@ -36,16 +41,20 @@ newGame = GameState newBoard P1 Manual Random
 gameLoop :: GameState -> IO ()
 gameLoop !gs = do
   drawBoard (board gs)
-  newGS <- takeTurn gs
-  if checkWin newGS (turn gs)
-    then do
-      drawBoard (board newGS)
-      setSGR [SetColor Foreground Vivid (getColour (turn gs))]
-      putStr $ show (turn gs)
-      setSGR [SetColor Foreground Vivid Yellow]
-      putStrLn " has won the game!"
-    else 
-      gameLoop newGS
+  maybeNewGS <- takeTurn gs
+  case maybeNewGS of
+    Just newGS -> do
+      if checkWin newGS (turn gs)
+        then do
+          drawBoard (board newGS)
+          setSGR [SetColor Foreground Vivid (getColour (turn gs))]
+          putStr $ show (turn gs)
+          setSGR [SetColor Foreground Vivid Yellow]
+          putStrLn " has won the game!"
+        else 
+          gameLoop newGS
+    _ ->
+      putStrLn "An error has occured. Closing."
 
 -- Draw the state of the board on screen
 drawBoard :: Board -> IO ()
@@ -73,23 +82,30 @@ drawBoard (Board ls) = br >> forM_ [0..h + 1] drawRow >> br
         p2Col = setSGR [SetColor Foreground Vivid (getColour P2)]
 
 -- How a player will make moves
-takeTurn :: GameState -> IO GameState
+takeTurn :: GameState -> IO (Maybe GameState)
 takeTurn gs = do
   let controls = if turn gs == P1 then p1Controls gs; else p2Controls gs;
-  coords <- handleControlType controls gs
-  case tryMakeMove gs coords of
-    Just newGS -> pure newGS
-    _ -> do
-      putStrLn "Error: Invalid move. Please re-evaluate strategy and try again."
-      takeTurn gs
+  tryCoords <- handleControlType controls gs
+  case tryCoords of
+    Left coords ->
+      case tryMakeMove gs coords of
+        Just newGS -> pure $ Just newGS
+        _ -> do
+          putStrLn "Error: Invalid move. Please re-evaluate strategy and try again."
+          takeTurn gs
+    Right msg -> do
+      setSGR [SetColor Foreground Vivid White]
+      putStrLn msg
+      pure Nothing
 
 -- Play the game differently per control type
 -- NOTE: This function is all about choosing where to place stones
 -- and does not have any method of tainting the GameState,
 -- meaning that all players abide by the same rules and conditions
-handleControlType :: ControlType -> GameState -> IO (Int, Int)
+handleControlType :: ControlType -> GameState -> IO (Either (Int, Int) String)
 handleControlType Manual = processInput
 handleControlType Random = randomChoice
+handleControlType (AI nodes) = evaluateChoices nodes
 
 -- Check if the tile at coords is unoccupied
 tryMakeMove :: GameState -> (Int, Int) -> Maybe GameState
@@ -138,7 +154,7 @@ checkWinChain grid p history search@(x, y)
 ---------------------
 
 -- Take input of the current player and coords
-processInput :: GameState -> IO (Int, Int)
+processInput :: GameState -> IO (Either (Int, Int) String)
 processInput gs = do
   setSGR [SetColor Foreground Vivid (getColour (turn gs))]
   putStr $ show (turn gs)
@@ -147,7 +163,7 @@ processInput gs = do
   input <- getLine
   hFlush stdout
   case convertStrToCoords input of
-    Left coords -> pure coords
+    Left coords -> pure $ Left coords
     Right msg -> do
       putStrLn msg
       processInput gs
@@ -166,12 +182,12 @@ convertStrToCoords (x : y : _)
         y' = readMaybe [y]
 convertStrToCoords input = Right $ "Error: Invalid input \"" ++ input ++ "\"."
 
----------------------
--- RANDOM CONTROLS --
----------------------
+-------------------
+-- RANDOM CHOICE --
+-------------------
 
 -- Evaluate choices and choose a random one
-randomChoice :: GameState -> IO (Int, Int)
+randomChoice :: GameState -> IO (Either (Int, Int) String)
 randomChoice gs = do
   let board' = let (Board b) = board gs in toList b
       (w, h) = boardSize
@@ -184,5 +200,91 @@ randomChoice gs = do
   rand <- randomRIO (0, (length choices) - 1)
   let choice@(x, y) = fst (choices !! rand)
   putStrLn $ [chr (x + ord 'A')] ++ show y
-  hFlush stdout
-  pure choice
+  pure $ Left choice
+
+---------------------
+-- MINMAX AI LOGIC --
+---------------------
+
+-- Create a tree of possible minmax
+createNodeTree :: Int -> Board -> MinMaxNode
+createNodeTree depth b@(Board board) = 
+  MinMaxNode
+  { current = b
+  , player = P1
+  , lastPlay = Nothing
+  , depth = 0
+  , children = leaves
+  , value = value . (decideMinMax P1) $ leaves
+  }
+  where leaves = map (constructNode depth 0 P1 b) choices
+        (w, h) = boardSize
+        grid = zip [(x, y) | y <- [0..h - 1], x <- [0..w - 1]] (toList board)
+        choices = map fst $ filter (((==) Empty) . snd) grid
+
+-- Recursively create nodes and their children
+constructNode :: Int -> Int -> Player -> Board -> (Int, Int) -> MinMaxNode
+constructNode depth pastDepth p (Board board) (x, y) =
+  MinMaxNode
+  { current = newBoard
+  , player = nextTurn
+  , lastPlay = Just (x, y)
+  , depth = newDepth
+  , children = leaves
+  , value = value . (decideMinMax nextTurn) $ leaves
+  }
+  where i = y * (fst boardSize) + x
+        newDepth = pastDepth + 1
+        newBoard = Board $ adjust (const (Stone p)) i board
+        nextTurn = if p == P1 then P2 else P1
+        (w, h) = boardSize
+        grid = zip [(x, y) | y <- [0..h - 1], x <- [0..w - 1]] (toList board)
+        choices = map fst $ filter (((==) Empty) . snd) grid
+        leaves = map (constructNode depth pastDepth nextTurn newBoard) choices
+        valMult = if p == P1 then 1 else -1
+        calcValue
+          | length leaves > 0 = ((w * h + 1) - newDepth) * valMult
+          | otherwise = value . (decideMinMax nextTurn) $ leaves
+
+-- Sync up this node tree properly
+catchUpNodeTree :: Board -> MinMaxNode -> Maybe MinMaxNode
+catchUpNodeTree board tree 
+  | current tree == board = Just tree
+  | otherwise = find (\n -> current n == board) (children tree)
+
+-- Evaluate choices and choose a random one
+evaluateChoices :: MVar MinMaxNode -> GameState -> IO (Either (Int, Int) String)
+evaluateChoices mvar gs = do
+
+  -- Evaluate node tree
+  nodeTree <- takeMVar mvar
+  let maybeTree = catchUpNodeTree (board gs) nodeTree
+  case maybeTree of
+
+    -- Synced up correctly, resume evaluation
+    Just tree -> do
+      let nextTree = decideMinMax (player tree) (children tree)
+          maybeCoords = lastPlay nextTree
+      case maybeCoords of
+
+        -- Report findings
+        Just (x, y) -> do
+          putMVar mvar nextTree
+
+          setSGR [SetColor Foreground Vivid (getColour (turn gs))]
+          putStr $ show (turn gs)
+          setSGR [SetColor Foreground Vivid White]
+          putStr " - chooses tile: "
+          putStrLn $ [chr (x + ord 'A')] ++ show y
+          pure $ Left (x, y)
+
+        -- Couldn't get coords, failed
+        _ -> do 
+          putMVar mvar nodeTree
+          pure $ Right "Critical Error: Couldn't find what move to play."
+
+    -- Failed, somethings happening
+    _ -> do
+      putMVar mvar nodeTree
+      pure $ Right "Critical Error: Couldn't sync node tree."
+
