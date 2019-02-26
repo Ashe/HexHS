@@ -18,27 +18,102 @@ import System.IO
 -- Import our types
 import Types
 
------------------------
--- GAME ARCHITECTURE --
------------------------
+--------------------------
+-- MENUS AND INTERFACES --
+--------------------------
 
 -- Entry to our program
 main :: IO ()
 main = do
-  ng <- newGame
-  gameLoop ng
+  setSGR [SetColor Foreground Vivid Yellow]
+  putStrLn "\nHEX:"
+  setSGR [SetColor Foreground Vivid White]
+  putStrLn "\nMain Menu:"
+  putStrLn "Press any key to play, 'R' for rules or 'Q' to quit."
+  str <- getLine
+  let choice = if length str > 0 then toUpper (head str) else ' '
+  case choice of
+    'Q' -> putStrLn "Goodbye!"
+    'R' -> do
+      putStrLn "By specifying empty tiles, place stones and traverse the board."
+      setSGR [SetColor Foreground Vivid (getColour P1)]
+      putStr "Player 1 "
+      setSGR [SetColor Foreground Vivid White]
+      putStrLn "wins by connecting the left and right sides together."
+      setSGR [SetColor Foreground Vivid (getColour P2)]
+      putStr "Player 2 "
+      setSGR [SetColor Foreground Vivid White]
+      putStrLn "wins by connecting the top and bottom sides together."
+      main
+    _ -> do
+      ng <- setupGame
+      gameLoop ng
+      main
   setSGR [SetColor Foreground Vivid White]
 
+-- Allow the user to set up the game
+setupGame :: IO GameState
+setupGame = do
+  putStrLn "\nNew Game: "
+  setSGR [SetColor Foreground Vivid White]
+  let board = newGameBoard
+      getController i = do
+        putStrLn $ "Please choose how player " ++ show i ++ " will play: "
+        putStrLn "A: Manual Input"
+        putStrLn "B: Random Input"
+        putStrLn "C: Minmax Calculated"
+        str <- getLine
+        if length str == 1 then
+          case toUpper (head str) of
+            'A' -> pure Manual
+            'B' -> pure Random
+            'C' -> do
+              let tree = createNodeTree 2 board
+              ai <- newMVar tree
+              pure $ AI ai
+            _ -> do
+              putStrLn "Error - Try again."
+              getController i
+        else do
+          putStrLn "Error - Try again."
+          getController i
+  c1 <- getController 1
+  c2 <- getController 2
+  pure $ GameState board P1 c1 c2
+
 -- Create a new game state
-newGame :: IO GameState
-newGame = do
-  let (w, h) = boardSize
-      tree = createNodeTree (w * h + 1) newBoard
-  putStrLn $ "Generated tree with " ++ show (length $ children $ tree) ++ " children."
-  ai <- newMVar tree
-  pure $ GameState newBoard P1 Manual (AI ai)
-  where newBoard = Board $ replicate size Empty
-        size = let (w, h) = boardSize in w * h
+newGameBoard :: Board
+newGameBoard = Board $ replicate size Empty
+  where size = let (w, h) = boardSize in w * h
+
+-- Draw the state of the board on screen
+drawBoard :: Board -> IO ()
+drawBoard (Board ls) = br >> forM_ [0..h + 1] drawRow >> br
+  where br = putStrLn ""
+        (w, h) = boardSize
+        offset r = putStr $ take r $ repeat ' '
+        drawRow r = offset r >> (forM_ [0..w + 1] (drawEl r)) >> br
+        drawEl y x
+          | (y <= 0 && x <= 0) || (x > w && y > h) = putStr "  "
+          | (y > h && x <= 0) || (x > w && y <= 0) = putStr "  "
+          | (y == 0 || y > h) && x > 0 =
+            p2Col >> putStr [' ', chr (x - 1 + (ord 'A'))]
+          | (x == 0 || x > w) && y > 0 =
+            p1Col >> putStr (" " ++ show (y - 1))
+          | otherwise = do
+              let el = getEl (x - 1) (y - 1)
+                  col = case el of
+                          Empty -> White
+                          Stone pl -> getColour pl
+              setSGR [SetColor Foreground Vivid col]
+              putStr $ " " ++ show el
+        getEl x y = index ls (fst boardSize * y + x)
+        p1Col = setSGR [SetColor Foreground Vivid (getColour P1)]
+        p2Col = setSGR [SetColor Foreground Vivid (getColour P2)]
+
+-----------------------
+-- GAME ARCHITECTURE --
+-----------------------
 
 -- Game loop of game
 gameLoop :: GameState -> IO ()
@@ -54,35 +129,10 @@ gameLoop !gs = do
           putStr $ show (turn gs)
           setSGR [SetColor Foreground Vivid Yellow]
           putStrLn " has won the game!"
-        else 
+        else
           gameLoop newGS
     _ ->
       putStrLn "An error has occured. Closing."
-
--- Draw the state of the board on screen
-drawBoard :: Board -> IO ()
-drawBoard (Board ls) = br >> forM_ [0..h + 1] drawRow >> br
-  where br = putStrLn ""
-        (w, h) = boardSize
-        offset r = putStr $ take r $ repeat ' '
-        drawRow r = offset r >> (forM_ [0..w + 1] (drawEl r)) >> br
-        drawEl y x
-          | (y <= 0 && x <= 0) || (x > w && y > h) = putStr "  "
-          | (y > h && x <= 0) || (x > w && y <= 0) = putStr "  "
-          | (y == 0 || y > h) && x > 0 = 
-            p2Col >> putStr [' ', chr (x - 1 + (ord 'A'))]
-          | (x == 0 || x > w) && y > 0 = 
-            p1Col >> putStr (" " ++ show (y - 1))
-          | otherwise = do
-              let el = getEl (x - 1) (y - 1)
-                  col = case el of
-                          Empty -> White
-                          Stone pl -> getColour pl
-              setSGR [SetColor Foreground Vivid col]
-              putStr $ " " ++ show el
-        getEl x y = index ls (fst boardSize * y + x)
-        p1Col = setSGR [SetColor Foreground Vivid (getColour P1)]
-        p2Col = setSGR [SetColor Foreground Vivid (getColour P2)]
 
 -- How a player will make moves
 takeTurn :: GameState -> IO (Maybe GameState)
@@ -112,7 +162,7 @@ handleControlType (AI nodes) = evaluateChoices nodes
 
 -- Check if the tile at coords is unoccupied
 tryMakeMove :: GameState -> (Int, Int) -> Maybe GameState
-tryMakeMove gs (x, y) = 
+tryMakeMove gs (x, y) =
   case index b i of
     Empty -> Just newGS
     _ -> Nothing
@@ -120,8 +170,8 @@ tryMakeMove gs (x, y) =
         Board b = board gs
         i = y * (fst boardSize) + x
         newB = adjust (const (Stone t)) i b
-        newGS = 
-          gs 
+        newGS =
+          gs
             { board = Board newB
             , turn = if t == P1 then P2 else P1
             }
@@ -147,9 +197,9 @@ checkWinChain grid p history search@(x, y)
         goal (x, y) = (p == P1 && x == w - 1) || (p == P2 && y == h - 1)
         check = checkWinChain grid p (history ++ [search])
         searches = [(x + i, y + j) | i <- [-1..1], j <- [-1..1], i /= j]
-        searches' = filter (\s@(x, y) -> x >= 0 
-                            && x < w && y >= 0 
-                            && y < h 
+        searches' = filter (\s@(x, y) -> x >= 0
+                            && x < w && y >= 0
+                            && y < h
                             && notElem s history) searches
 
 ---------------------
@@ -162,7 +212,7 @@ processInput gs = do
   setSGR [SetColor Foreground Vivid (getColour (turn gs))]
   putStr $ show (turn gs)
   setSGR [SetColor Foreground Vivid White]
-  putStr " - Please make your move eg. A0: "
+  putStrLn " - Please make your move eg. A0: "
   input <- getLine
   hFlush stdout
   case convertStrToCoords input of
@@ -173,12 +223,12 @@ processInput gs = do
 
 -- Finds coords from a string eg A0 into (0, 0) or returns error
 convertStrToCoords :: String -> Either (Int, Int) String
-convertStrToCoords (x : y : _) 
-  | x' < 0 || x' >= snd boardSize = 
+convertStrToCoords (x : y : _)
+  | x' < 0 || x' >= snd boardSize =
       Right $ "Error: Col " ++ [toUpper x] ++ " is invalid."
-  | isNothing y' = 
+  | isNothing y' =
       Right $ "Error: Row " ++ [y] ++ " is invalid."
-  | fromJust y' < 0 || fromJust y' >= fst boardSize = 
+  | fromJust y' < 0 || fromJust y' >= fst boardSize =
       Right $ "Error: Row " ++ show y' ++ "is out of bounds."
   | otherwise = Left (x', fromJust y')
   where x' = ord (toUpper x) - ord 'A'
@@ -211,7 +261,7 @@ randomChoice gs = do
 
 -- Create a tree of possible minmax
 createNodeTree :: Int -> Board -> MinMaxNode
-createNodeTree depth b@(Board board) = 
+createNodeTree depth b@(Board board) =
   MinMaxNode
   { current = b
   , player = P1
@@ -247,13 +297,14 @@ constructNode depth pastDepth p (Board board) (x, y) =
         valMult = if p == P1 then -1 else 1
         calcValue
           | checkWin (Board newBoard) p = resolveValue
+          | newDepth == depth = resolveValue
           | length leaves > 0 = value . (decideMinMax nextTurn) $ leaves
           | otherwise = resolveValue
         resolveValue = (depth + 1 - newDepth) * valMult
 
 -- Sync up this node tree properly
 catchUpNodeTree :: Board -> MinMaxNode -> Maybe MinMaxNode
-catchUpNodeTree board tree 
+catchUpNodeTree board tree
   | current tree == board = Just tree
   | otherwise = find (\n -> current n == board) (children tree)
 
@@ -287,7 +338,7 @@ evaluateChoices mvar gs = do
           pure $ Left (x, y)
 
         -- Couldn't get coords, failed
-        _ -> do 
+        _ -> do
           putMVar mvar nodeTree
           pure $ Right "Critical Error: Couldn't find what move to play."
 
@@ -295,4 +346,3 @@ evaluateChoices mvar gs = do
     _ -> do
       putMVar mvar nodeTree
       pure $ Right "Critical Error: Couldn't sync node tree."
-
