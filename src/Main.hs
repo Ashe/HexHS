@@ -4,6 +4,7 @@ module Main where
 
 import Prelude hiding (replicate)
 import Data.Sequence (replicate, adjust, index)
+import Data.Foldable (toList)
 import Data.Char (toUpper, ord, chr)
 import Text.Read (readMaybe)
 import Data.Maybe (isNothing, fromJust)
@@ -16,7 +17,9 @@ import Types
 
 -- Entry to our program
 main :: IO ()
-main = gameLoop newGame
+main = do
+  gameLoop newGame
+  setSGR [SetColor Foreground Vivid White]
 
 -- Create a new game state
 newGame :: GameState
@@ -29,7 +32,14 @@ gameLoop :: GameState -> IO ()
 gameLoop !gs = do
   drawBoard (board gs)
   newGS <- takePlayerTurn gs
-  gameLoop newGS
+  if checkWin newGS (turn gs)
+    then do
+      setSGR [SetColor Foreground Vivid (getColour (turn gs))]
+      putStr $ show (turn gs)
+      setSGR [SetColor Foreground Vivid Yellow]
+      drawBoard (board gs)
+      putStrLn " has won the game!"
+    else gameLoop newGS
 
 -- Draw the state of the board on screen
 drawBoard :: Board -> IO ()
@@ -109,4 +119,30 @@ tryMakeMove gs (x, y) =
             { board = Board newB
             , turn = if t == P1 then P2 else P1
             }
+
+-- Check if the previous player won
+checkWin :: GameState -> Player -> Bool
+checkWin gs prevPlayer = foldl (||) False $ map check startSearch
+  where board' = let (Board b) = board gs in toList b
+        (w, h) = boardSize
+        grid = zip [(x, y) | y <- [0..h - 1], x <- [0..w - 1]] board'
+        check = checkWinChain grid prevPlayer []
+        startSearch = if prevPlayer == P1
+                        then [(0, n) | n <- [0..h - 1]]
+                        else [(n, 0) | n <- [0..h - 1]]
+
+-- Searches all neighbours recursively to find victory
+checkWinChain :: [((Int, Int), Tile)] -> Player -> [(Int, Int)] -> (Int, Int) -> Bool
+checkWinChain grid p history search@(x, y)
+  | lookup search grid /= Just (Stone p) = False
+  | goal search = True
+  | otherwise = foldl (||) False $ map check searches'
+  where (w, h) = boardSize
+        goal (x, y) = (p == P1 && x == w - 1) || (p == P2 && y == h - 1)
+        check = checkWinChain grid p (history ++ [search])
+        searches = [(x + i, y + j) | i <- [-1..1], j <- [-1..1], i /= j]
+        searches' = filter (\s@(x, y) -> x >= 0 
+                            && x < w && y >= 0 
+                            && y < h 
+                            && notElem s history) searches
 

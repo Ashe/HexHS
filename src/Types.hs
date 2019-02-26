@@ -20,7 +20,7 @@ data GameState =
   , turn :: Player
   }
 
--- Size of the game
+-- Size of the game (max 10, 10)
 boardSize :: (Int, Int)
 boardSize = (10, 10)
 
